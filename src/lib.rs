@@ -145,7 +145,7 @@ cfg_if! {
 
         mod sgx;
         pub use sgx::*;
-    } else if #[cfg(target_os = "twizzer")] {
+    } else if #[cfg(target_os = "twizzler")] {
         mod fixed_width_ints;
         pub use fixed_width_ints::*;
 
