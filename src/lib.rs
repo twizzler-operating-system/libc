@@ -16,6 +16,7 @@
     redundant_semicolons,
     unused_macros,
     unused_macro_rules,
+    warnings
 )]
 #![cfg_attr(libc_deny_warnings, deny(warnings))]
 // Attributes needed when building as part of the standard library
