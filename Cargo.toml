@@ -30,6 +30,7 @@ targets = [
     "aarch64-unknown-linux-musl",
     "aarch64-unknown-netbsd",
     "aarch64-unknown-openbsd",
+    "aarch64-unknown-twizzler",
     "aarch64-wrs-vxworks",
     "arm-linux-androideabi",
     "arm-unknown-linux-gnueabi",
@@ -128,6 +129,7 @@ targets = [
     "x86_64-unknown-netbsd",
     "x86_64-unknown-openbsd",
     "x86_64-unknown-redox",
+    "x86_64-unknown-twizzler",
     "x86_64-wrs-vxworks"
 ]
 cargo-args = ["-Zbuild-std=core"]
