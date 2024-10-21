@@ -128,6 +128,12 @@ cfg_if! {
 
         mod solid;
         pub use solid::*;
+    } else if #[cfg(target_os = "twizzler")] {
+        mod fixed_width_ints;
+        pub use fixed_width_ints::*;
+
+        mod twizzler;
+        pub use twizzler::*;
     } else if #[cfg(unix)] {
         mod fixed_width_ints;
         pub use fixed_width_ints::*;
@@ -152,12 +158,6 @@ cfg_if! {
 
         mod sgx;
         pub use sgx::*;
-    } else if #[cfg(target_os = "twizzler")] {
-        mod fixed_width_ints;
-        pub use fixed_width_ints::*;
-
-        mod twizzler;
-        pub use twizzler::*;
     } else if #[cfg(any(target_env = "wasi", target_os = "wasi"))] {
         mod fixed_width_ints;
         pub use fixed_width_ints::*;
