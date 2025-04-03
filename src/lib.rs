@@ -131,12 +131,12 @@ cfg_if! {
         pub use crate::sgx::*;
 
         prelude!();
-    } else if #[cfg(target_os = "twizzer")] {
+    } else if #[cfg(target_os = "twizzler")] {
         mod primitives;
-        pub use primitives::*;
+        pub use crate::primitives::*;
 
         mod twizzler;
-        pub use twizzler::*;
+        pub use crate::twizzler::*;
 
         prelude!();
     } else if #[cfg(any(target_env = "wasi", target_os = "wasi"))] {
@@ -159,4 +159,3 @@ cfg_if! {
         // non-supported targets: empty...
     }
 }
-
