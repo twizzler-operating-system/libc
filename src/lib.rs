@@ -8,6 +8,7 @@
     overflowing_literals,
     unused_macros,
     unused_macro_rules,
+    unreachable_pub,
 )]
 #![warn(
     missing_copy_implementations,

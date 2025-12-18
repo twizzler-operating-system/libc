@@ -17,6 +17,7 @@ pub type wctype_t = i64;
 pub type regoff_t = size_t;
 pub type off_t = c_long;
 
+pub type pid_t = i32;
 pub const STDIN_FILENO: c_int = 0;
 pub const STDOUT_FILENO: c_int = 1;
 pub const STDERR_FILENO: c_int = 2;
