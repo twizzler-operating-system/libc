@@ -4015,3 +4015,6 @@ cfg_if! {
         // Unknown target_arch
     }
 }
+
+#[link(name = "c", kind = "static", modifiers = "-bundle")]
+extern "C" {}
