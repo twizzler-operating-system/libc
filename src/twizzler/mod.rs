@@ -1211,6 +1211,7 @@ pub const SIGSEGV: c_int = 11;
 pub const SIGPIPE: c_int = 13;
 pub const SIGALRM: c_int = 14;
 pub const SIGTERM: c_int = 15;
+pub const SIGINFO: c_int = 33;
 
 pub const PROT_NONE: c_int = 0;
 pub const PROT_READ: c_int = 1;
@@ -2610,6 +2611,7 @@ pub const VSTART: usize = 8;
 pub const VSTOP: usize = 9;
 pub const VDISCARD: usize = 13;
 pub const VTIME: usize = 5;
+pub const VSTATUS: usize = 18;
 pub const IXON: crate::tcflag_t = 0x00000400;
 pub const IXOFF: crate::tcflag_t = 0x00001000;
 pub const ONLCR: crate::tcflag_t = 0x4;
