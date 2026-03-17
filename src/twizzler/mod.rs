@@ -929,6 +929,16 @@ s! {
         pub d_name: [c_char; 256],
     }
 
+    pub struct kevent {
+        pub ident: crate::uintptr_t,
+        pub filter: c_short,
+        pub flags: c_ushort,
+        pub fflags: c_uint,
+        pub data: i64,
+        pub udata: *mut c_void,
+        pub ext: [u64; 4],
+    }
+
     // x32 compatibility
     // See https://sourceware.org/bugzilla/show_bug.cgi?id=21279
     pub struct mq_attr {
@@ -2943,6 +2953,76 @@ pub const O_NOFOLLOW: c_int = 0x00000080;
 pub const HUGETLB_FLAG_ENCODE_SHIFT: u32 = 26;
 pub const MAP_HUGE_SHIFT: u32 = 26;
 
+pub const POLLINIGNEOF: c_short = 0x2000;
+pub const POLLRDHUP: c_short = 0x4000;
+
+pub const EVFILT_READ: i16 = -1;
+pub const EVFILT_WRITE: i16 = -2;
+pub const EVFILT_AIO: i16 = -3;
+pub const EVFILT_VNODE: i16 = -4;
+pub const EVFILT_PROC: i16 = -5;
+pub const EVFILT_SIGNAL: i16 = -6;
+pub const EVFILT_TIMER: i16 = -7;
+pub const EVFILT_PROCDESC: i16 = -8;
+pub const EVFILT_FS: i16 = -9;
+pub const EVFILT_LIO: i16 = -10;
+pub const EVFILT_USER: i16 = -11;
+pub const EVFILT_SENDFILE: i16 = -12;
+pub const EVFILT_EMPTY: i16 = -13;
+
+pub const EV_ADD: u16 = 0x1;
+pub const EV_DELETE: u16 = 0x2;
+pub const EV_ENABLE: u16 = 0x4;
+pub const EV_DISABLE: u16 = 0x8;
+pub const EV_FORCEONESHOT: u16 = 0x100;
+pub const EV_KEEPUDATA: u16 = 0x200;
+
+pub const EV_ONESHOT: u16 = 0x10;
+pub const EV_CLEAR: u16 = 0x20;
+pub const EV_RECEIPT: u16 = 0x40;
+pub const EV_DISPATCH: u16 = 0x80;
+pub const EV_SYSFLAGS: u16 = 0xf000;
+pub const EV_DROP: u16 = 0x1000;
+pub const EV_FLAG1: u16 = 0x2000;
+pub const EV_FLAG2: u16 = 0x4000;
+
+pub const EV_EOF: u16 = 0x8000;
+pub const EV_ERROR: u16 = 0x4000;
+
+pub const NOTE_TRIGGER: u32 = 0x01000000;
+pub const NOTE_FFNOP: u32 = 0x00000000;
+pub const NOTE_FFAND: u32 = 0x40000000;
+pub const NOTE_FFOR: u32 = 0x80000000;
+pub const NOTE_FFCOPY: u32 = 0xc0000000;
+pub const NOTE_FFCTRLMASK: u32 = 0xc0000000;
+pub const NOTE_FFLAGSMASK: u32 = 0x00ffffff;
+pub const NOTE_LOWAT: u32 = 0x00000001;
+pub const NOTE_FILE_POLL: u32 = 0x00000002;
+pub const NOTE_DELETE: u32 = 0x00000001;
+pub const NOTE_WRITE: u32 = 0x00000002;
+pub const NOTE_EXTEND: u32 = 0x00000004;
+pub const NOTE_ATTRIB: u32 = 0x00000008;
+pub const NOTE_LINK: u32 = 0x00000010;
+pub const NOTE_RENAME: u32 = 0x00000020;
+pub const NOTE_REVOKE: u32 = 0x00000040;
+pub const NOTE_OPEN: u32 = 0x00000080;
+pub const NOTE_CLOSE: u32 = 0x00000100;
+pub const NOTE_CLOSE_WRITE: u32 = 0x00000200;
+pub const NOTE_READ: u32 = 0x00000400;
+pub const NOTE_EXIT: u32 = 0x80000000;
+pub const NOTE_FORK: u32 = 0x40000000;
+pub const NOTE_EXEC: u32 = 0x20000000;
+pub const NOTE_PDATAMASK: u32 = 0x000fffff;
+pub const NOTE_PCTRLMASK: u32 = 0xf0000000;
+pub const NOTE_TRACK: u32 = 0x00000001;
+pub const NOTE_TRACKERR: u32 = 0x00000002;
+pub const NOTE_CHILD: u32 = 0x00000004;
+pub const NOTE_SECONDS: u32 = 0x00000001;
+pub const NOTE_MSECONDS: u32 = 0x00000002;
+pub const NOTE_USECONDS: u32 = 0x00000004;
+pub const NOTE_NSECONDS: u32 = 0x00000008;
+pub const NOTE_ABSTIME: u32 = 0x00000010;
+
 // intentionally not public, only used for fd_set
 cfg_if! {
     if #[cfg(target_pointer_width = "32")] {
@@ -4003,6 +4083,16 @@ extern "C" {
             ) -> c_int,
         >,
         data: *mut c_void,
+    ) -> c_int;
+
+    pub fn kqueue() -> c_int;
+    pub fn kevent(
+        kq: c_int,
+        changelist: *const crate::kevent,
+        nchanges: c_int,
+        eventlist: *mut crate::kevent,
+        nevents: c_int,
+        timeout: *const crate::timespec,
     ) -> c_int;
 }
 
