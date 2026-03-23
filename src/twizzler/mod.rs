@@ -4108,5 +4108,5 @@ cfg_if! {
     }
 }
 
-#[link(name = "c", kind = "static", modifiers = "-bundle")]
+#[link(name = "c")]
 extern "C" {}
