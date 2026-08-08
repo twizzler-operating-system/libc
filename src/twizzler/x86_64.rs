@@ -65,13 +65,17 @@ s! {
         __unused2: Padding<c_long>,
     }
 
+    // Trails mlibc's `struct __ucontext` (abi-bits/signal.h): the 512-byte `__fpregs_mem` is
+    // followed by `unsigned long __ssp[4]`. Without the latter this was 32 bytes short of mlibc's
+    // 968, so `getcontext()` would have written past the end.
     pub struct ucontext_t {
         pub uc_flags: c_ulong,
         pub uc_link: *mut ucontext_t,
         pub uc_stack: crate::stack_t,
         pub uc_mcontext: mcontext_t,
         pub uc_sigmask: crate::sigset_t,
-        __private: [u8; 512],
+        __fpregs_mem: [u8; 512],
+        __ssp: [c_ulong; 4],
     }
 }
 

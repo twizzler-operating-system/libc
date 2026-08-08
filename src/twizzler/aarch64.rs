@@ -3,8 +3,10 @@ use crate::prelude::*;
 
 pub type __u64 = c_ulonglong;
 pub type wchar_t = u32;
-pub type nlink_t = c_ulong;
-pub type blksize_t = c_long;
+// mlibc narrows both of these outside x86_64 (abi-bits/nlink_t.h, abi-bits/blksize_t.h), which
+// changes the layout of `struct stat`.
+pub type nlink_t = c_uint;
+pub type blksize_t = c_int;
 
 s! {
     pub struct stat {

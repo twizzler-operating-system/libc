@@ -21,7 +21,7 @@ pub type in_port_t = u16;
 pub type sighandler_t = size_t;
 pub type cc_t = c_uchar;
 pub type sa_family_t = u16;
-pub type pthread_key_t = c_uint;
+pub type pthread_key_t = uintptr_t;
 pub type speed_t = c_uint;
 pub type tcflag_t = c_uint;
 pub type clockid_t = c_int;
@@ -162,6 +162,7 @@ s! {
         pub s_addr: in_addr_t,
     }
 
+    #[repr(align(4))]
     pub struct in6_addr {
         pub s6_addr: [u8; 16],
     }
@@ -267,11 +268,13 @@ s! {
 
     // FIXME(1.0): This should not implement `PartialEq`
     #[allow(unpredictable_function_pointer_comparisons)]
+    // Field order and `sa_flags` width follow mlibc's `struct sigaction` (abi-bits/signal.h), not
+    // glibc's: mlibc puts flags and restorer before the mask, and flags is `unsigned long`.
     pub struct sigaction {
         pub sa_sigaction: crate::sighandler_t,
-        pub sa_mask: crate::sigset_t,
-        pub sa_flags: c_int,
+        pub sa_flags: c_ulong,
         pub sa_restorer: Option<extern "C" fn()>,
+        pub sa_mask: crate::sigset_t,
     }
 
     pub struct termios {
@@ -369,12 +372,10 @@ s! {
         pub tm_zone: *const c_char,
     }
 
+    // mlibc's `struct __mlibc_sched_param` (bits/threads.h) has only this field; the SS/TSP
+    // fields are still a TODO there, so declaring them here made the struct 48 bytes vs mlibc's 4.
     pub struct sched_param {
         pub sched_priority: c_int,
-        pub sched_ss_low_priority: c_int,
-        pub sched_ss_repl_period: crate::timespec,
-        pub sched_ss_init_budget: crate::timespec,
-        pub sched_ss_max_repl: c_int,
     }
 
     pub struct Dl_info {
@@ -389,28 +390,30 @@ s! {
         pub u64: u64,
     }
 
+    // Field order follows mlibc's `struct lconv` (locale.h): the currency pointers come before
+    // `int_curr_symbol`, and the `int_*` bytes trail the plain ones.
     pub struct lconv {
         pub decimal_point: *mut c_char,
         pub thousands_sep: *mut c_char,
         pub grouping: *mut c_char,
-        pub int_curr_symbol: *mut c_char,
-        pub currency_symbol: *mut c_char,
         pub mon_decimal_point: *mut c_char,
         pub mon_thousands_sep: *mut c_char,
         pub mon_grouping: *mut c_char,
         pub positive_sign: *mut c_char,
         pub negative_sign: *mut c_char,
-        pub int_frac_digits: c_char,
+        pub currency_symbol: *mut c_char,
         pub frac_digits: c_char,
         pub p_cs_precedes: c_char,
-        pub p_sep_by_space: c_char,
         pub n_cs_precedes: c_char,
+        pub p_sep_by_space: c_char,
         pub n_sep_by_space: c_char,
         pub p_sign_posn: c_char,
         pub n_sign_posn: c_char,
+        pub int_curr_symbol: *mut c_char,
+        pub int_frac_digits: c_char,
         pub int_p_cs_precedes: c_char,
-        pub int_p_sep_by_space: c_char,
         pub int_n_cs_precedes: c_char,
+        pub int_p_sep_by_space: c_char,
         pub int_n_sep_by_space: c_char,
         pub int_p_sign_posn: c_char,
         pub int_n_sign_posn: c_char,
@@ -756,8 +759,11 @@ s! {
         pub ss_size: size_t,
     }
 
+    // mlibc's `struct __mlibc_threadattr` (bits/threads.h) is 200 bytes and 8-aligned: it embeds a
+    // whole `sigset_t`. The previous 56 bytes was glibc's size, so `pthread_attr_init` wrote 144
+    // bytes past this struct.
     pub struct pthread_attr_t {
-        __size: [u64; 7],
+        __size: [u64; 25],
     }
 
     pub struct sigset_t {
@@ -826,7 +832,7 @@ s! {
     }
 
     pub struct sem_t {
-        __val: [c_int; 8],
+        __val: [c_int; 1],
     }
 
     pub struct siginfo_t {
@@ -857,16 +863,12 @@ s! {
         any(target_pointer_width = "32", target_arch = "x86_64"),
         repr(align(4))
     )]
-    #[cfg_attr(
-        not(any(target_pointer_width = "32", target_arch = "x86_64")),
-        repr(align(8))
-    )]
+    #[repr(align(4))]
     pub struct pthread_mutexattr_t {
         size: [u8; crate::__SIZEOF_PTHREAD_MUTEXATTR_T],
     }
 
-    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
-    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+    #[repr(align(4))]
     pub struct pthread_rwlockattr_t {
         size: [u8; crate::__SIZEOF_PTHREAD_RWLOCKATTR_T],
     }
@@ -974,55 +976,28 @@ s! {
 
     // FIXME(msrv): suggested method was added in 1.85
     #[allow(unpredictable_function_pointer_comparisons)]
+    // mlibc's `struct sigevent` (abi-bits/sigevent.h) orders notify before signo, ends with
+    // `sigev_notify_thread_id`, and has no trailing padding.
     pub struct sigevent {
         pub sigev_value: crate::sigval,
-        pub sigev_signo: c_int,
         pub sigev_notify: c_int,
-        pub sigev_notify_function: fn(crate::sigval),
+        pub sigev_signo: c_int,
+        pub sigev_notify_function: Option<extern "C" fn(crate::sigval)>,
         pub sigev_notify_attributes: *mut pthread_attr_t,
-        pub __pad: [c_char; 56 - 3 * 8],
+        pub sigev_notify_thread_id: crate::pid_t,
     }
 
-    #[cfg_attr(
-        all(
-            target_pointer_width = "32",
-            any(target_arch = "arm", target_arch = "x86_64")
-        ),
-        repr(align(4))
-    )]
-    #[cfg_attr(
-        any(
-            target_pointer_width = "64",
-            not(any(target_arch = "arm", target_arch = "x86_64"))
-        ),
-        repr(align(8))
-    )]
+    #[repr(align(4))]
     pub struct pthread_mutex_t {
         size: [u8; crate::__SIZEOF_PTHREAD_MUTEX_T],
     }
 
-    #[cfg_attr(
-        all(
-            target_pointer_width = "32",
-            any(target_arch = "arm", target_arch = "x86_64")
-        ),
-        repr(align(4))
-    )]
-    #[cfg_attr(
-        any(
-            target_pointer_width = "64",
-            not(any(target_arch = "arm", target_arch = "x86_64"))
-        ),
-        repr(align(8))
-    )]
+    #[repr(align(4))]
     pub struct pthread_rwlock_t {
         size: [u8; crate::__SIZEOF_PTHREAD_RWLOCK_T],
     }
 
-    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
-    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
-    #[cfg_attr(target_arch = "x86", repr(align(4)))]
-    #[cfg_attr(not(target_arch = "x86"), repr(align(8)))]
+    #[repr(align(4))]
     pub struct pthread_cond_t {
         size: [u8; crate::__SIZEOF_PTHREAD_COND_T],
     }
@@ -1122,10 +1097,9 @@ pub const EOF: c_int = -1;
 pub const SEEK_SET: c_int = 0;
 pub const SEEK_CUR: c_int = 1;
 pub const SEEK_END: c_int = 2;
-pub const _IOFBF: c_int = 0;
-pub const _IONBF: c_int = 2;
-pub const _IOLBF: c_int = 1;
-
+pub const _IOFBF: c_int = 1;
+pub const _IONBF: c_int = 3;
+pub const _IOLBF: c_int = 2;
 pub const F_DUPFD: c_int = 0;
 pub const F_GETFD: c_int = 1;
 pub const F_SETFD: c_int = 2;
@@ -1814,8 +1788,8 @@ pub const NOEXPR: crate::nl_item = 0x50001;
 pub const YESSTR: crate::nl_item = 0x50002;
 pub const NOSTR: crate::nl_item = 0x50003;
 
-pub const FILENAME_MAX: c_uint = 4096;
-pub const L_tmpnam: c_uint = 20;
+pub const FILENAME_MAX: c_uint = 256;
+pub const L_tmpnam: c_uint = 256;
 pub const _PC_LINK_MAX: c_int = 0;
 pub const _PC_MAX_CANON: c_int = 1;
 pub const _PC_MAX_INPUT: c_int = 2;
@@ -1829,13 +1803,13 @@ pub const _PC_SYNC_IO: c_int = 9;
 pub const _PC_ASYNC_IO: c_int = 10;
 pub const _PC_PRIO_IO: c_int = 11;
 pub const _PC_SOCK_MAXBUF: c_int = 12;
-pub const _PC_FILESIZEBITS: c_int = 13;
+pub const _PC_FILESIZEBITS: c_int = 9;
 pub const _PC_REC_INCR_XFER_SIZE: c_int = 14;
 pub const _PC_REC_MAX_XFER_SIZE: c_int = 15;
 pub const _PC_REC_MIN_XFER_SIZE: c_int = 16;
 pub const _PC_REC_XFER_ALIGN: c_int = 17;
 pub const _PC_ALLOC_SIZE_MIN: c_int = 18;
-pub const _PC_SYMLINK_MAX: c_int = 19;
+pub const _PC_SYMLINK_MAX: c_int = 10;
 pub const _PC_2_SYMLINKS: c_int = 20;
 
 pub const _SC_ARG_MAX: c_int = 0;
@@ -1983,18 +1957,16 @@ pub const _SC_THREAD_ROBUST_PRIO_PROTECT: c_int = 248;
 pub const RLIM_SAVED_MAX: crate::rlim_t = RLIM_INFINITY;
 pub const RLIM_SAVED_CUR: crate::rlim_t = RLIM_INFINITY;
 
-pub const GLOB_ERR: c_int = 1 << 0;
-pub const GLOB_MARK: c_int = 1 << 1;
-pub const GLOB_NOSORT: c_int = 1 << 2;
-pub const GLOB_DOOFFS: c_int = 1 << 3;
+pub const GLOB_ERR: c_int = 4;
+pub const GLOB_MARK: c_int = 8;
+pub const GLOB_NOSORT: c_int = 64;
+pub const GLOB_DOOFFS: c_int = 2;
 pub const GLOB_NOCHECK: c_int = 1 << 4;
-pub const GLOB_APPEND: c_int = 1 << 5;
-pub const GLOB_NOESCAPE: c_int = 1 << 6;
-
-pub const GLOB_NOSPACE: c_int = 1;
-pub const GLOB_ABORTED: c_int = 2;
-pub const GLOB_NOMATCH: c_int = 3;
-
+pub const GLOB_APPEND: c_int = 1;
+pub const GLOB_NOESCAPE: c_int = 32;
+pub const GLOB_NOSPACE: c_int = 3;
+pub const GLOB_ABORTED: c_int = 1;
+pub const GLOB_NOMATCH: c_int = 2;
 pub const POSIX_MADV_NORMAL: c_int = 0;
 pub const POSIX_MADV_RANDOM: c_int = 1;
 pub const POSIX_MADV_SEQUENTIAL: c_int = 2;
@@ -2005,10 +1977,9 @@ pub const S_IWRITE: mode_t = 0o0200;
 pub const S_IREAD: mode_t = 0o0400;
 
 pub const F_LOCK: c_int = 1;
-pub const F_TEST: c_int = 3;
-pub const F_TLOCK: c_int = 2;
-pub const F_ULOCK: c_int = 0;
-
+pub const F_TEST: c_int = 2;
+pub const F_TLOCK: c_int = 3;
+pub const F_ULOCK: c_int = 4;
 pub const IFF_LOWER_UP: c_int = 0x10000;
 pub const IFF_DORMANT: c_int = 0x20000;
 pub const IFF_ECHO: c_int = 0x40000;
@@ -2042,12 +2013,12 @@ pub const PTHREAD_RWLOCK_INITIALIZER: pthread_rwlock_t = pthread_rwlock_t {
     size: [0; __SIZEOF_PTHREAD_RWLOCK_T],
 };
 pub const PTHREAD_MUTEX_NORMAL: c_int = 0;
-pub const PTHREAD_MUTEX_RECURSIVE: c_int = 1;
-pub const PTHREAD_MUTEX_ERRORCHECK: c_int = 2;
+pub const PTHREAD_MUTEX_RECURSIVE: c_int = 2;
+pub const PTHREAD_MUTEX_ERRORCHECK: c_int = 1;
 pub const PTHREAD_MUTEX_DEFAULT: c_int = PTHREAD_MUTEX_NORMAL;
 pub const PTHREAD_PROCESS_PRIVATE: c_int = 0;
 pub const PTHREAD_PROCESS_SHARED: c_int = 1;
-pub const __SIZEOF_PTHREAD_COND_T: usize = 48;
+pub const __SIZEOF_PTHREAD_COND_T: usize = 12;
 
 pub const RENAME_NOREPLACE: c_int = 1;
 pub const RENAME_EXCHANGE: c_int = 2;
@@ -2187,30 +2158,27 @@ pub const AI_V4MAPPED: c_int = 0x0008;
 pub const AI_ALL: c_int = 0x0010;
 pub const AI_ADDRCONFIG: c_int = 0x0020;
 
-pub const AI_NUMERICSERV: c_int = 0x0400;
-
-pub const EAI_BADFLAGS: c_int = -1;
-pub const EAI_NONAME: c_int = -2;
-pub const EAI_AGAIN: c_int = -3;
-pub const EAI_FAIL: c_int = -4;
-pub const EAI_FAMILY: c_int = -6;
-pub const EAI_SOCKTYPE: c_int = -7;
-pub const EAI_SERVICE: c_int = -8;
-pub const EAI_MEMORY: c_int = -10;
-pub const EAI_OVERFLOW: c_int = -12;
-
-pub const NI_NUMERICHOST: c_int = 1;
+pub const AI_NUMERICSERV: c_int = 64;
+pub const EAI_BADFLAGS: c_int = 2;
+pub const EAI_NONAME: c_int = 6;
+pub const EAI_AGAIN: c_int = 1;
+pub const EAI_FAIL: c_int = 3;
+pub const EAI_FAMILY: c_int = 4;
+pub const EAI_SOCKTYPE: c_int = 8;
+pub const EAI_SERVICE: c_int = 7;
+pub const EAI_MEMORY: c_int = 5;
+pub const EAI_OVERFLOW: c_int = 10;
+pub const NI_NUMERICHOST: c_int = 2;
 pub const NI_NUMERICSERV: c_int = 2;
-pub const NI_NOFQDN: c_int = 4;
-pub const NI_NAMEREQD: c_int = 8;
+pub const NI_NOFQDN: c_int = 1;
+pub const NI_NAMEREQD: c_int = 4;
 pub const NI_DGRAM: c_int = 16;
 
 pub const SYNC_FILE_RANGE_WAIT_BEFORE: c_uint = 1;
 pub const SYNC_FILE_RANGE_WRITE: c_uint = 2;
 pub const SYNC_FILE_RANGE_WAIT_AFTER: c_uint = 4;
 
-pub const EAI_SYSTEM: c_int = -11;
-
+pub const EAI_SYSTEM: c_int = 9;
 pub const AIO_CANCELED: c_int = 0;
 pub const AIO_NOTCANCELED: c_int = 1;
 pub const AIO_ALLDONE: c_int = 2;
@@ -2480,10 +2448,10 @@ pub const SFD_CLOEXEC: c_int = 0x080000;
 
 pub const NCCS: usize = 32;
 
-pub const O_TRUNC: c_int = 0x00040000;
-pub const O_NOATIME: c_int = 0x00002000;
-pub const O_CLOEXEC: c_int = 0x00000100;
-pub const O_TMPFILE: c_int = 0x00004000;
+pub const O_TRUNC: c_int = 0o1000;
+pub const O_NOATIME: c_int = 0o1000000;
+pub const O_CLOEXEC: c_int = 0o2000000;
+pub const O_TMPFILE: c_int = 0o20000000 | O_DIRECTORY;
 
 pub const EBFONT: c_int = 59;
 pub const ENOSTR: c_int = 60;
@@ -2509,16 +2477,16 @@ pub const EPOLL_CLOEXEC: c_int = 0x80000;
 
 pub const EFD_CLOEXEC: c_int = 0x80000;
 
-pub const BUFSIZ: c_uint = 1024;
-pub const TMP_MAX: c_uint = 10000;
-pub const FOPEN_MAX: c_uint = 1000;
-pub const O_PATH: c_int = 0x00400000;
+pub const BUFSIZ: c_uint = 512;
+pub const TMP_MAX: c_uint = 1024;
+pub const FOPEN_MAX: c_uint = 1024;
+pub const O_PATH: c_int = 0o10000000;
 pub const O_EXEC: c_int = O_PATH;
 pub const O_SEARCH: c_int = O_PATH;
-pub const O_ACCMODE: c_int = 03 | O_SEARCH;
+pub const O_ACCMODE: c_int = 0o3 | O_PATH;
 pub const O_NDELAY: c_int = O_NONBLOCK;
-pub const NI_MAXHOST: crate::socklen_t = 255;
-pub const PTHREAD_STACK_MIN: size_t = 2048;
+pub const NI_MAXHOST: crate::socklen_t = 1025;
+pub const PTHREAD_STACK_MIN: size_t = 16384;
 pub const POSIX_FADV_DONTNEED: c_int = 4;
 pub const POSIX_FADV_NOREUSE: c_int = 5;
 
@@ -2550,9 +2518,9 @@ pub const TCP_TIMESTAMP: c_int = 24;
 
 pub const SIGUNUSED: c_int = crate::SIGSYS;
 
-pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 4;
-pub const __SIZEOF_PTHREAD_MUTEXATTR_T: usize = 4;
-pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 8;
+pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 8;
+pub const __SIZEOF_PTHREAD_MUTEXATTR_T: usize = 20;
+pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 4;
 
 pub const CPU_SETSIZE: c_int = 128;
 
@@ -2699,10 +2667,10 @@ pub const SO_PEEK_OFF: c_int = 42;
 pub const SO_BUSY_POLL: c_int = 46;
 pub const SO_BINDTOIFINDEX: c_int = 62;
 
-pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 56;
-pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 40;
+pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 12;
+pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 16;
 
-pub const O_ASYNC: c_int = 0x00000400;
+pub const O_ASYNC: c_int = 0o20000;
 
 pub const FIOCLEX: c_int = 0x5451;
 pub const FIONBIO: c_int = 0x5421;
@@ -2713,14 +2681,14 @@ pub const RLIMIT_AS: c_int = 9;
 pub const RLIMIT_NPROC: c_int = 6;
 pub const RLIMIT_MEMLOCK: c_int = 8;
 
-pub const O_APPEND: c_int = 0x00100000;
-pub const O_CREAT: c_int = 0x00010000;
-pub const O_EXCL: c_int = 0x00020000;
-pub const O_NOCTTY: c_int = 0x00000200;
-pub const O_NONBLOCK: c_int = 0x00000010;
-pub const O_SYNC: c_int = 0x00000040 | O_DSYNC;
+pub const O_APPEND: c_int = 0o2000;
+pub const O_CREAT: c_int = 0o100;
+pub const O_EXCL: c_int = 0o200;
+pub const O_NOCTTY: c_int = 0o400;
+pub const O_NONBLOCK: c_int = 0o4000;
+pub const O_SYNC: c_int = 0o4010000;
 pub const O_RSYNC: c_int = O_SYNC;
-pub const O_DSYNC: c_int = 0x00000020;
+pub const O_DSYNC: c_int = 0o10000;
 
 pub const SOCK_CLOEXEC: c_int = 0o2000000;
 pub const SOCK_NONBLOCK: c_int = 0o4000;
@@ -2945,17 +2913,26 @@ pub const TIOCM_DSR: c_int = 0x100;
 pub const TIOCM_CD: c_int = TIOCM_CAR;
 pub const TIOCM_RI: c_int = TIOCM_RNG;
 
-pub const O_DIRECTORY: c_int = 0x00080000;
-pub const O_DIRECT: c_int = 0x00000800;
-pub const O_LARGEFILE: c_int = 0x00001000;
-pub const O_NOFOLLOW: c_int = 0x00000080;
+// mlibc assigns these four different bits per architecture (abi-bits/fcntl.h).
+cfg_if! {
+    if #[cfg(target_arch = "x86_64")] {
+        pub const O_DIRECT: c_int = 0o40000;
+        pub const O_LARGEFILE: c_int = 0o100000;
+        pub const O_DIRECTORY: c_int = 0o200000;
+        pub const O_NOFOLLOW: c_int = 0o400000;
+    } else if #[cfg(target_arch = "aarch64")] {
+        pub const O_DIRECTORY: c_int = 0o40000;
+        pub const O_NOFOLLOW: c_int = 0o100000;
+        pub const O_DIRECT: c_int = 0o200000;
+        pub const O_LARGEFILE: c_int = 0o400000;
+    }
+}
 
 pub const HUGETLB_FLAG_ENCODE_SHIFT: u32 = 26;
 pub const MAP_HUGE_SHIFT: u32 = 26;
 
 pub const POLLINIGNEOF: c_short = 0x2000;
-pub const POLLRDHUP: c_short = 0x4000;
-
+pub const POLLRDHUP: c_short = 8192;
 pub const EVFILT_READ: i16 = -1;
 pub const EVFILT_WRITE: i16 = -2;
 pub const EVFILT_AIO: i16 = -3;
