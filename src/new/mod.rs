@@ -208,7 +208,10 @@ cfg_if! {
 
 // Per-family headers we export
 cfg_if! {
-    if #[cfg(target_family = "unix")] {
+    // Not twizzler: the per-target dispatch above imports no platform module for it, so the
+    // `unistd`/`pthread` re-exports below have nothing to resolve to. Reachable only because the
+    // target now claims the unix family; `new` is otherwise empty for us.
+    if #[cfg(all(target_family = "unix", not(target_os = "twizzler")))] {
         // FIXME(pthread): eventually all platforms should use this module
         #[cfg(any(
             target_os = "android",

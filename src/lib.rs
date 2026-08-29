@@ -97,6 +97,14 @@ cfg_if! {
         pub use crate::solid::*;
 
         prelude!();
+    } else if #[cfg(target_os = "twizzler")] {
+        mod primitives;
+        pub use crate::primitives::*;
+
+        mod twizzler;
+        pub use crate::twizzler::*;
+
+        prelude!();
     } else if #[cfg(unix)] {
         mod primitives;
         pub use crate::primitives::*;
@@ -135,14 +143,6 @@ cfg_if! {
 
         mod sgx;
         pub use crate::sgx::*;
-
-        prelude!();
-    } else if #[cfg(target_os = "twizzler")] {
-        mod primitives;
-        pub use crate::primitives::*;
-
-        mod twizzler;
-        pub use crate::twizzler::*;
 
         prelude!();
     } else if #[cfg(any(target_env = "wasi", target_os = "wasi"))] {

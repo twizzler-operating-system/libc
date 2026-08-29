@@ -1003,6 +1003,59 @@ s! {
     }
 }
 
+// mlibc's twizzler `siginfo_t` is the musl layout (sysdeps/twizzler/include/abi-bits/signal.h),
+// so the accessors are musl's -- taken from src/unix/linux_like/linux/musl/mod.rs rather than
+// indexed off `_pad`, which would bake in offsets nothing checks.
+s_no_extra_traits! {
+    // Internal, for casts to access union fields
+    struct sifields_sigchld {
+        si_pid: crate::pid_t,
+        si_uid: crate::uid_t,
+        si_status: c_int,
+        si_utime: c_long,
+        si_stime: c_long,
+    }
+
+    // Internal, for casts to access union fields
+    union sifields {
+        _align_pointer: *mut c_void,
+        sigchld: sifields_sigchld,
+    }
+
+    // Internal, for casts to access union fields. Some variants of sifields start with a
+    // pointer, which is what fixes its alignment.
+    struct siginfo_f {
+        _siginfo_base: [c_int; 3],
+        sifields: sifields,
+    }
+}
+
+impl siginfo_t {
+    unsafe fn sifields(&self) -> &sifields {
+        &(*(self as *const siginfo_t as *const siginfo_f)).sifields
+    }
+
+    pub unsafe fn si_pid(&self) -> crate::pid_t {
+        self.sifields().sigchld.si_pid
+    }
+
+    pub unsafe fn si_uid(&self) -> crate::uid_t {
+        self.sifields().sigchld.si_uid
+    }
+
+    pub unsafe fn si_status(&self) -> c_int {
+        self.sifields().sigchld.si_status
+    }
+
+    pub unsafe fn si_utime(&self) -> c_long {
+        self.sifields().sigchld.si_utime
+    }
+
+    pub unsafe fn si_stime(&self) -> c_long {
+        self.sifields().sigchld.si_stime
+    }
+}
+
 // PUB_CONST
 
 pub const INT_MIN: c_int = -2147483648;
@@ -1568,13 +1621,16 @@ pub const TCOON: c_int = 1;
 pub const TCIFLUSH: c_int = 0;
 pub const TCOFLUSH: c_int = 1;
 pub const TCIOFLUSH: c_int = 2;
-pub const NL0: c_int = 0x00000000;
-pub const NL1: c_int = 0x00000100;
-pub const TAB0: c_int = 0x00000000;
-pub const CR0: c_int = 0x00000000;
-pub const FF0: c_int = 0x00000000;
-pub const BS0: c_int = 0x00000000;
-pub const VT0: c_int = 0x00000000;
+// c_oflag delay bits: these are `tcflag_t` like every other flag in this field (cf. XTABS
+// below, which was already correct). They were `c_int`, which broke any consumer building
+// a tcflag_t-typed bitflags set out of them.
+pub const NL0: crate::tcflag_t = 0x00000000;
+pub const NL1: crate::tcflag_t = 0x00000100;
+pub const TAB0: crate::tcflag_t = 0x00000000;
+pub const CR0: crate::tcflag_t = 0x00000000;
+pub const FF0: crate::tcflag_t = 0x00000000;
+pub const BS0: crate::tcflag_t = 0x00000000;
+pub const VT0: crate::tcflag_t = 0x00000000;
 pub const VERASE: usize = 2;
 pub const VKILL: usize = 3;
 pub const VINTR: usize = 0;
@@ -2573,15 +2629,15 @@ pub const MCL_CURRENT: c_int = 0x0001;
 pub const MCL_FUTURE: c_int = 0x0002;
 
 pub const CBAUD: crate::tcflag_t = 0o0010017;
-pub const TAB1: c_int = 0x00000800;
-pub const TAB2: c_int = 0x00001000;
-pub const TAB3: c_int = 0x00001800;
-pub const CR1: c_int = 0x00000200;
-pub const CR2: c_int = 0x00000400;
-pub const CR3: c_int = 0x00000600;
-pub const FF1: c_int = 0x00008000;
-pub const BS1: c_int = 0x00002000;
-pub const VT1: c_int = 0x00004000;
+pub const TAB1: crate::tcflag_t = 0x00000800;
+pub const TAB2: crate::tcflag_t = 0x00001000;
+pub const TAB3: crate::tcflag_t = 0x00001800;
+pub const CR1: crate::tcflag_t = 0x00000200;
+pub const CR2: crate::tcflag_t = 0x00000400;
+pub const CR3: crate::tcflag_t = 0x00000600;
+pub const FF1: crate::tcflag_t = 0x00008000;
+pub const BS1: crate::tcflag_t = 0x00002000;
+pub const VT1: crate::tcflag_t = 0x00004000;
 pub const VWERASE: usize = 14;
 pub const VREPRINT: usize = 12;
 pub const VSUSP: usize = 10;
@@ -2858,6 +2914,9 @@ pub const F_GETOWN: c_int = 9;
 pub const F_SETLK: c_int = 6;
 pub const F_SETLKW: c_int = 7;
 pub const F_SETOWN: c_int = 8;
+pub const F_RDLCK: c_int = 0;
+pub const F_WRLCK: c_int = 1;
+pub const F_UNLCK: c_int = 2;
 
 pub const VEOF: usize = 4;
 pub const VEOL: usize = 11;
@@ -3014,6 +3073,16 @@ cfg_if! {
 // END_PUB_CONST
 
 f! {
+    // mlibc has no `cfsetspeed`, but POSIX defines it as setting both speeds and mlibc exports
+    // both halves. Implemented here rather than declared: a declaration for a symbol the sysroot
+    // cannot resolve links fine and kills the monitor at relocation -- see the `fstatfs` incident.
+    pub fn cfsetspeed(termios: *mut crate::termios, speed: crate::speed_t) -> c_int {
+        let r = crate::cfsetispeed(termios, speed);
+        if r != 0 {
+            return r;
+        }
+        return crate::cfsetospeed(termios, speed);
+    }
     pub fn FD_CLR(fd: c_int, set: *mut fd_set) -> () {
         let fd = fd as usize;
         let size = size_of_val(&(*set).fds_bits[0]) * 8;
@@ -3663,7 +3732,6 @@ extern "C" {
     pub fn cfmakeraw(termios: *mut crate::termios);
     pub fn cfsetispeed(termios: *mut crate::termios, speed: crate::speed_t) -> c_int;
     pub fn cfsetospeed(termios: *mut crate::termios, speed: crate::speed_t) -> c_int;
-    pub fn cfsetspeed(termios: *mut crate::termios, speed: crate::speed_t) -> c_int;
     pub fn tcgetattr(fd: c_int, termios: *mut crate::termios) -> c_int;
     pub fn tcsetattr(fd: c_int, optional_actions: c_int, termios: *const crate::termios) -> c_int;
     pub fn tcflow(fd: c_int, action: c_int) -> c_int;
@@ -3691,17 +3759,13 @@ extern "C" {
     pub fn clock_settime(clk_id: crate::clockid_t, tp: *const crate::timespec) -> c_int;
     pub fn dirfd(dirp: *mut crate::DIR) -> c_int;
 
-    pub fn pthread_getattr_np(native: crate::pthread_t, attr: *mut crate::pthread_attr_t) -> c_int;
     pub fn pthread_attr_getstack(
         attr: *const crate::pthread_attr_t,
         stackaddr: *mut *mut c_void,
         stacksize: *mut size_t,
     ) -> c_int;
-    pub fn memalign(align: size_t, size: size_t) -> *mut c_void;
     pub fn setgroups(ngroups: size_t, ptr: *const crate::gid_t) -> c_int;
     pub fn pipe2(fds: *mut c_int, flags: c_int) -> c_int;
-    pub fn statfs(path: *const c_char, buf: *mut statfs) -> c_int;
-    pub fn fstatfs(fd: c_int, buf: *mut statfs) -> c_int;
     pub fn memrchr(cx: *const c_void, c: c_int, n: size_t) -> *mut c_void;
 
     pub fn posix_fadvise(fd: c_int, offset: off_t, len: off_t, advise: c_int) -> c_int;
@@ -3735,6 +3799,16 @@ extern "C" {
         flg: c_int,
     ) -> c_int;
     pub fn ptsname_r(fd: c_int, buf: *mut c_char, buflen: size_t) -> c_int;
+    pub fn ttyname_r(fd: c_int, buf: *mut c_char, buflen: size_t) -> c_int;
+    pub fn fchdir(dirfd: c_int) -> c_int;
+    pub fn killpg(pgrp: crate::pid_t, sig: c_int) -> c_int;
+    pub fn truncate(path: *const c_char, length: off_t) -> c_int;
+    pub fn chroot(name: *const c_char) -> c_int;
+    pub fn nice(incr: c_int) -> c_int;
+    pub fn getpriority(which: c_int, who: crate::id_t) -> c_int;
+    pub fn setpriority(which: c_int, who: crate::id_t, prio: c_int) -> c_int;
+    pub fn getrlimit(resource: c_int, rlim: *mut crate::rlimit) -> c_int;
+    pub fn setrlimit(resource: c_int, rlim: *const crate::rlimit) -> c_int;
     pub fn clearenv() -> c_int;
     pub fn waitid(
         idtype: idtype_t,
@@ -3754,8 +3828,6 @@ extern "C" {
         egid: *mut crate::gid_t,
         sgid: *mut crate::gid_t,
     ) -> c_int;
-    pub fn acct(filename: *const c_char) -> c_int;
-    pub fn brk(addr: *mut c_void) -> c_int;
     pub fn setresgid(rgid: crate::gid_t, egid: crate::gid_t, sgid: crate::gid_t) -> c_int;
     pub fn setresuid(ruid: crate::uid_t, euid: crate::uid_t, suid: crate::uid_t) -> c_int;
     pub fn openpty(
@@ -3807,21 +3879,9 @@ extern "C" {
     pub fn mprotect(addr: *mut c_void, len: size_t, prot: c_int) -> c_int;
     pub fn __errno_location() -> *mut c_int;
 
-    pub fn fallocate(fd: c_int, mode: c_int, offset: off_t, len: off_t) -> c_int;
     pub fn posix_fallocate(fd: c_int, offset: off_t, len: off_t) -> c_int;
-    pub fn readahead(fd: c_int, offset: off64_t, count: size_t) -> ssize_t;
-    pub fn signalfd(fd: c_int, mask: *const crate::sigset_t, flags: c_int) -> c_int;
-    pub fn timerfd_create(clockid: c_int, flags: c_int) -> c_int;
-    pub fn timerfd_gettime(fd: c_int, curr_value: *mut itimerspec) -> c_int;
-    pub fn timerfd_settime(
-        fd: c_int,
-        flags: c_int,
-        new_value: *const itimerspec,
-        old_value: *mut itimerspec,
-    ) -> c_int;
     pub fn pwritev(fd: c_int, iov: *const crate::iovec, iovcnt: c_int, offset: off_t) -> ssize_t;
     pub fn preadv(fd: c_int, iov: *const crate::iovec, iovcnt: c_int, offset: off_t) -> ssize_t;
-    pub fn quotactl(cmd: c_int, special: *const c_char, id: c_int, data: *mut c_char) -> c_int;
     pub fn dup3(oldfd: c_int, newfd: c_int, flags: c_int) -> c_int;
     pub fn mkostemp(template: *mut c_char, flags: c_int) -> c_int;
     pub fn mkostemps(template: *mut c_char, suffixlen: c_int, flags: c_int) -> c_int;
@@ -3841,17 +3901,11 @@ extern "C" {
         servlen: crate::socklen_t,
         flags: c_int,
     ) -> c_int;
-    pub fn reboot(how_to: c_int) -> c_int;
-    pub fn setfsgid(gid: crate::gid_t) -> c_int;
-    pub fn setfsuid(uid: crate::uid_t) -> c_int;
 
     // Not available now on Android
     pub fn mkfifoat(dirfd: c_int, pathname: *const c_char, mode: mode_t) -> c_int;
     pub fn if_nameindex() -> *mut if_nameindex;
     pub fn if_freenameindex(ptr: *mut if_nameindex);
-    pub fn sync_file_range(fd: c_int, offset: off64_t, nbytes: off64_t, flags: c_uint) -> c_int;
-    pub fn getifaddrs(ifap: *mut *mut crate::ifaddrs) -> c_int;
-    pub fn freeifaddrs(ifa: *mut crate::ifaddrs);
 
     pub fn glob(
         pattern: *const c_char,
@@ -3868,7 +3922,6 @@ extern "C" {
     pub fn seekdir(dirp: *mut crate::DIR, loc: c_long);
 
     pub fn telldir(dirp: *mut crate::DIR) -> c_long;
-    pub fn madvise(addr: *mut c_void, len: size_t, advice: c_int) -> c_int;
 
     pub fn msync(addr: *mut c_void, len: size_t, flags: c_int) -> c_int;
 
@@ -3897,7 +3950,6 @@ extern "C" {
     pub fn recvmsg(fd: c_int, msg: *mut crate::msghdr, flags: c_int) -> ssize_t;
     pub fn getdomainname(name: *mut c_char, len: size_t) -> c_int;
     pub fn setdomainname(name: *const c_char, len: size_t) -> c_int;
-    pub fn vhangup() -> c_int;
     pub fn sendmmsg(sockfd: c_int, msgvec: *mut mmsghdr, vlen: c_uint, flags: c_int) -> c_int;
     pub fn recvmmsg(
         sockfd: c_int,
@@ -3907,44 +3959,11 @@ extern "C" {
         timeout: *mut crate::timespec,
     ) -> c_int;
     pub fn sync();
-    pub fn syscall(num: c_long, ...) -> c_long;
-    pub fn sched_getaffinity(
-        pid: crate::pid_t,
-        cpusetsize: size_t,
-        cpuset: *mut cpu_set_t,
-    ) -> c_int;
-    pub fn sched_setaffinity(
-        pid: crate::pid_t,
-        cpusetsize: size_t,
-        cpuset: *const cpu_set_t,
-    ) -> c_int;
-    pub fn umount(target: *const c_char) -> c_int;
     pub fn sched_get_priority_max(policy: c_int) -> c_int;
-    pub fn tee(fd_in: c_int, fd_out: c_int, len: size_t, flags: c_uint) -> ssize_t;
     pub fn settimeofday(tv: *const crate::timeval, tz: *const crate::timezone) -> c_int;
-    pub fn splice(
-        fd_in: c_int,
-        off_in: *mut crate::loff_t,
-        fd_out: c_int,
-        off_out: *mut crate::loff_t,
-        len: size_t,
-        flags: c_uint,
-    ) -> ssize_t;
-    pub fn eventfd(initval: c_uint, flags: c_int) -> c_int;
-    pub fn sched_rr_get_interval(pid: crate::pid_t, tp: *mut crate::timespec) -> c_int;
     pub fn sem_timedwait(sem: *mut sem_t, abstime: *const crate::timespec) -> c_int;
     pub fn sem_getvalue(sem: *mut sem_t, sval: *mut c_int) -> c_int;
     pub fn sched_setparam(pid: crate::pid_t, param: *const crate::sched_param) -> c_int;
-    pub fn swapoff(puath: *const c_char) -> c_int;
-    pub fn vmsplice(fd: c_int, iov: *const crate::iovec, nr_segs: size_t, flags: c_uint)
-        -> ssize_t;
-    pub fn mount(
-        src: *const c_char,
-        target: *const c_char,
-        fstype: *const c_char,
-        flags: c_ulong,
-        data: *const c_void,
-    ) -> c_int;
     pub fn personality(persona: c_ulong) -> c_int;
     pub fn sched_getparam(pid: crate::pid_t, param: *mut crate::sched_param) -> c_int;
     pub fn ppoll(
@@ -3957,14 +3976,6 @@ extern "C" {
         lock: *mut pthread_mutex_t,
         abstime: *const crate::timespec,
     ) -> c_int;
-    pub fn clone(
-        cb: extern "C" fn(*mut c_void) -> c_int,
-        child_stack: *mut c_void,
-        flags: c_int,
-        arg: *mut c_void,
-        ...
-    ) -> c_int;
-    pub fn sched_getscheduler(pid: crate::pid_t) -> c_int;
     pub fn clock_nanosleep(
         clk_id: crate::clockid_t,
         flags: c_int,
@@ -3978,8 +3989,6 @@ extern "C" {
     pub fn pthread_attr_setguardsize(attr: *mut crate::pthread_attr_t, guardsize: size_t) -> c_int;
     pub fn sethostname(name: *const c_char, len: size_t) -> c_int;
     pub fn sched_get_priority_min(policy: c_int) -> c_int;
-    pub fn umount2(target: *const c_char, flags: c_int) -> c_int;
-    pub fn swapon(path: *const c_char, swapflags: c_int) -> c_int;
     pub fn sched_setscheduler(
         pid: crate::pid_t,
         policy: c_int,
