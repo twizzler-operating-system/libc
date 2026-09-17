@@ -3916,6 +3916,7 @@ extern "C" {
     pub fn globfree(pglob: *mut crate::glob_t);
 
     pub fn posix_madvise(addr: *mut c_void, len: size_t, advice: c_int) -> c_int;
+    pub fn madvise(addr: *mut c_void, len: size_t, advice: c_int) -> c_int;
 
     pub fn shm_unlink(name: *const c_char) -> c_int;
 
