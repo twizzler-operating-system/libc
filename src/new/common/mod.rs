@@ -35,5 +35,7 @@ pub(crate) mod netbsd_like;
 #[cfg(any(target_os = "illumos", target_os = "solaris"))]
 pub(crate) mod solarish;
 
-#[cfg(target_family = "unix")]
+// Not twizzler: it has no platform module under `new` to opt in to these, and `src/twizzler`
+// defines its own. See the per-family export note in `new/mod.rs`.
+#[cfg(all(target_family = "unix", not(target_os = "twizzler")))]
 pub(crate) mod posix;
